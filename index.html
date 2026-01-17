@@ -1,195 +1,158 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Révision Biblique – Mémorisation personnelle</title>
-
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 720px;
-      margin: 40px auto;
-      background: #f5f5f5;
-      padding: 20px;
-    }
-    .card {
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-      margin-bottom: 20px;
-    }
-    textarea, input {
-      width: 100%;
-      margin-top: 8px;
-      padding: 8px;
-      font-size: 15px;
-    }
-    button {
-      margin-top: 10px;
-      padding: 10px 14px;
-      border: none;
-      border-radius: 8px;
-      background: #007bff;
-      color: white;
-      cursor: pointer;
-      font-size: 15px;
-    }
-    button:hover { background: #0056d2; }
-    .small { font-size: 14px; padding: 7px 12px; margin-right: 5px; }
-    .danger { background: #c62828; }
-    .danger:hover { background: #a01f1f; }
-  </style>
+<meta charset="UTF-8">
+<title>Quiz Biblique – Mémorisation</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f5f5f5;
+    text-align: center;
+    padding: 20px;
+  }
+  .card {
+    background: white;
+    padding: 20px;
+    max-width: 700px;
+    margin: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  button {
+    margin: 6px;
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .small-btn {
+    font-size: 13px;
+  }
+</style>
 </head>
 
 <body>
 
-  <!-- AJOUT DE VERSET -->
-  <div class="card">
-    <h2>➕ Ajouter un verset</h2>
-    <input id="refInput" placeholder="Référence (ex : Psaume 119:105)">
-    <textarea id="textInput" placeholder="Texte du verset"></textarea>
-    <button onclick="addVerse()">Ajouter le verset</button>
-  </div>
+<h2>Quiz de mémorisation biblique</h2>
 
-  <!-- QUIZ -->
-  <div class="card">
-    <h2 id="question">Ajoute un verset pour commencer</h2>
-    <div id="answers"></div>
-    <button id="nextBtn" style="display:none;" onclick="loadCard()">Suivant</button>
-  </div>
+<div style="margin-bottom:15px;">
+  <button onclick="setMode('refToText')">Référence → Texte</button>
+  <button onclick="setMode('textToRef')">Texte → Référence</button>
+  <button onclick="setMode('recitation')">Mode récitation</button>
+</div>
 
-  <!-- GESTION -->
-  <div class="card">
-    <h3>⚙️ Gestion</h3>
-    <button class="danger" onclick="resetAll()">Tout réinitialiser</button>
-  </div>
+<div class="card">
+  <div id="question"></div>
+  <div id="answers" style="margin-top:15px;"></div>
+</div>
 
 <script>
-/* =====================
-   DONNÉES
-===================== */
-
 let cards = [];
+let filteredCards = [];
 let currentCard = null;
-let lastCard = null;
+let lastCardId = null;
+let mode = "refToText";
 
-/* =====================
-   STOCKAGE LOCAL
-===================== */
-
-function saveCards() {
-  localStorage.setItem("personalBibleCards", JSON.stringify(cards));
-}
-
-function loadCards() {
-  const saved = localStorage.getItem("personalBibleCards");
-  if (saved) cards = JSON.parse(saved);
-}
-
-/* =====================
-   AJOUT DE VERSET
-===================== */
-
-function addVerse() {
-  const ref = document.getElementById("refInput").value.trim();
-  const text = document.getElementById("textInput").value.trim();
-
-  if (!ref || !text) {
-    alert("Référence et texte obligatoires.");
-    return;
-  }
-
-  cards.push({
-    reference: ref,
-    text: text,
-    strength: 1
+// Chargement JSON commun
+fetch("verses.json")
+  .then(res => res.json())
+  .then(data => {
+    cards = data.map(c => ({
+      ...c,
+      strength: loadStrength(c.id)
+    }));
+    filteredCards = cards;
+    loadCard();
   });
 
-  saveCards();
-  document.getElementById("refInput").value = "";
-  document.getElementById("textInput").value = "";
+function loadStrength(id) {
+  const data = JSON.parse(localStorage.getItem("strengths") || "{}");
+  return data[id] ?? 1;
+}
+
+function saveStrength(id, value) {
+  const data = JSON.parse(localStorage.getItem("strengths") || "{}");
+  data[id] = value;
+  localStorage.setItem("strengths", JSON.stringify(data));
+}
+
+function setMode(m) {
+  mode = m;
   loadCard();
 }
 
-/* =====================
-   RÉPÉTITION ESPACÉE
-===================== */
-
 function getNextCard() {
-  if (cards.length === 0) return null;
+  if (filteredCards.length === 0) return null;
 
-  const weights = cards.map(c => 1 / c.strength);
-  const total = weights.reduce((a, b) => a + b, 0);
+  let available = filteredCards.filter(c => c.id !== lastCardId);
+  if (available.length === 0) available = filteredCards;
 
-  for (let attempt = 0; attempt < 10; attempt++) {
-    let r = Math.random() * total;
-    for (let i = 0; i < cards.length; i++) {
-      r -= weights[i];
-      if (r <= 0) {
-        if (cards[i] !== lastCard || cards.length === 1) {
-          lastCard = cards[i];
-          return cards[i];
-        }
-      }
-    }
+  const totalWeight = available.reduce((acc, c) => acc + (1 / c.strength), 0);
+  let r = Math.random() * totalWeight;
+
+  for (let c of available) {
+    r -= (1 / c.strength);
+    if (r <= 0) return c;
   }
-
-  return cards[0];
+  return available[0];
 }
-
-/* =====================
-   QUIZ
-===================== */
 
 function loadCard() {
   currentCard = getNextCard();
   if (!currentCard) return;
 
-  document.getElementById("question").textContent = currentCard.reference;
-  document.getElementById("answers").innerHTML = `
-    <button onclick="showAnswer()">Afficher le verset</button>
-  `;
-  document.getElementById("nextBtn").style.display = "none";
+  lastCardId = currentCard.id;
+
+  let questionText = "";
+  if (mode === "textToRef") {
+    questionText = currentCard.text;
+  } else {
+    questionText = currentCard.reference;
+  }
+
+  document.getElementById("question").textContent = questionText;
+
+  document.getElementById("answers").innerHTML =
+    `<button onclick="showAnswer()">Afficher la réponse</button>`;
 }
 
 function showAnswer() {
+  if (mode === "recitation") {
+    document.getElementById("answers").innerHTML = `
+      <button onclick="showRecitationText()">Afficher le texte</button><br><br>
+      <button class="small-btn" onclick="grade(true)">Bien retenu 👍</button>
+      <button class="small-btn" onclick="grade(false)">À revoir 👎</button>
+    `;
+    return;
+  }
+
+  let answer = (mode === "textToRef")
+    ? currentCard.reference
+    : currentCard.text;
+
   document.getElementById("answers").innerHTML = `
-    <p><strong>${currentCard.text}</strong></p>
-    <button class="small" onclick="grade(true)">Je savais 👍</button>
-    <button class="small" onclick="grade(false)">J’ai oublié 👎</button>
+    <strong>${answer}</strong><br><br>
+    <button class="small-btn" onclick="grade(true)">Bien retenu 👍</button>
+    <button class="small-btn" onclick="grade(false)">À revoir 👎</button>
   `;
-  document.getElementById("nextBtn").style.display = "block";
+}
+
+function showRecitationText() {
+  document.getElementById("answers").innerHTML = `
+    <strong>${currentCard.text}</strong><br><br>
+    <button class="small-btn" onclick="grade(true)">Bien retenu 👍</button>
+    <button class="small-btn" onclick="grade(false)">À revoir 👎</button>
+  `;
 }
 
 function grade(success) {
-  if (success) currentCard.strength = Math.min(currentCard.strength + 0.5, 10);
-  else currentCard.strength = Math.max(currentCard.strength - 1.5, 1);
-  saveCards();
+  if (success) {
+    currentCard.strength = Math.min(currentCard.strength + 1, 10);
+  } else {
+    currentCard.strength = Math.max(currentCard.strength - 1, 1);
+  }
+  saveStrength(currentCard.id, currentCard.strength);
   loadCard();
 }
-
-/* =====================
-   RESET
-===================== */
-
-function resetAll() {
-  if (confirm("Tout supprimer ? Versets et progression.")) {
-    localStorage.removeItem("personalBibleCards");
-    cards = [];
-    document.getElementById("question").textContent = "Ajoute un verset pour commencer";
-    document.getElementById("answers").innerHTML = "";
-    document.getElementById("nextBtn").style.display = "none";
-  }
-}
-
-/* =====================
-   INIT
-===================== */
-
-loadCards();
-loadCard();
 </script>
 
 </body>
