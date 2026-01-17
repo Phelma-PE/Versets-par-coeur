@@ -53,7 +53,7 @@ let lastCardId = null;
 let mode = "refToText";
 
 // Chargement JSON commun
-fetch("verses.json")
+fetch("versets.json")
   .then(res => res.json())
   .then(data => {
     cards = data.map(c => ({
@@ -157,3 +157,4 @@ function grade(success) {
 
 </body>
 </html>
+
